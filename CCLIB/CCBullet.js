@@ -43,6 +43,7 @@ CCBullet.prototype.updatePosition = function (delta_time) {
     }
     if (this.lengthMove > 300) {
         this.isRemove = true;
+        console.log('bullet: remove : >300');
     }
 }
 
@@ -63,21 +64,9 @@ CCBullet.prototype.checkCollisionWithObstacle = function (obstacle) {
 CCBullet.prototype.checkCollisionWithTank = function (tank) {
     var dtX = Math.abs(this.pos.x - tank.pos.x);
     var dtY = Math.abs(this.pos.y - tank.pos.y);
-    var distance = common.distace2Object(this.pos, tank.pos);
-    var kcW = distance / 2;
-    var kcH = distance / 2;
-
-    if (dtX < kcW && dtY < kcH) {
-        this.isRemove = true;
-        tank.hp--;
-        tank.isShooted = true;
-        if (tank.hp = 0) {
-            tank.isRemove = true;
-        }
-
-        return true;
-    }
-    return false;
+    var kcW = tank.w / 2;
+    var kcH = tank.h / 2;
+    return (dtX < kcW && dtY < kcH);
 }
 
 CCBullet.prototype.checkCollisionWithMapEdge = function () {
@@ -86,6 +75,5 @@ CCBullet.prototype.checkCollisionWithMapEdge = function () {
     }
 
 }
-
 
 module.exports = CCBullet;

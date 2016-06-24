@@ -69,6 +69,7 @@ function CCRoom(idroom) {
     this.BOOTAILIST = [];     //machine tank list
     this.lifeTimeSC = 0;
     this.lastPosAdd = null;
+    this.aiAdded = false;
 }
 CCRoom.prototype.getCountUser = function () {
     var numbercount = 0;
@@ -102,9 +103,11 @@ CCRoom.prototype.RemovePlayerIfNeed = function (playerid) {
     delete this.PLAYLIST[playerid];
 }
 
-CCRoom.prototype.AddPlayer = function (player) {
-    this.PLAYLIST[player.numberID] = player;
 
+CCRoom.prototype.AddPlayer = function (player) {
+
+    this.PLAYLIST[player.numberID] = player;
+    console.log("-----AddPlayer");
     var countFree = this.listArrFrePosition.length;
     var rd = Math.floor(Math.random() * countFree); //get a random zoneId
     if (rd >= countFree) { //can not happen ?
@@ -124,12 +127,34 @@ CCRoom.prototype.AddPlayer = function (player) {
     console.log("----------------->rd: %s vi tri x=%s y=%s", rd, objFree.x, objFree.y);
 }
 
+
+
+CCRoom.prototype.resetPlayer = function (player) {
+
+    var countFree = this.listArrFrePosition.length;
+    var rd = Math.floor(Math.random() * countFree); //get a random zoneId
+    if (rd >= countFree) { //can not happen ?
+        console.log("loi roi oi lay random add player vao position m_free");
+        rd = countFree - 1;
+    }
+
+    var objFree = this.listArrFrePosition[rd]; //free position
+    logObject(objFree);// luu y: do luoi ve o client luon luon la boi so cua df_cell_draw_width=20 nen o day vi tri x,y cung phai la boi so cua 20
+    player.pos.x = Number(objFree.x);
+    player.pos.y = Number(objFree.y);
+    this.lastPosAdd = objFree; //store last position the tank added
+    player.mySpeed = 80;
+    player.hp = 10;
+    player.isRemove = false;
+    player.isShooted = false;
+    player.shooterId = 0;
+}
+
 CCRoom.prototype.loadMapAndAI = function () {
     fs = require('fs')
     var fs = require('fs');
     var obj = JSON.parse(fs.readFileSync('./Map/mapgame1.json', 'utf8'));
     this.listArrOBJ = obj.mapObstacle;
-    console.log(this.listArrOBJ.length);
     this.listArrFree = obj.mapFreeRect; //free zone to gen items
     this.listArrUnit = obj.Unit;
     this.listArrFrePosition = obj.ArrFreePos;
@@ -177,13 +202,51 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
     var arrtankZone = [];
     var arrBulletZone = [];
     var arrItemZone = [];
+    var arrExplosion = [];
+
     /// khoi tao 3 mang Object
     for (var i = 0; i < 100; i++) {
         arrtankZone.push([]); //arrtankZone[[],[],[] ....,[]]
         arrBulletZone.push([]);
         arrItemZone.push([]);
+        arrExplosion.push([]);
     }
 
+    //delete all bullet are marked as isRemove from previous frame
+    var bulletArrToDelete = [];
+    var bulletKeys = Object.keys(this.listArrBullet);
+    for (var i = 0, l = bulletKeys.length; i < l; i++) {
+        var bulletKey = bulletKeys[i];
+        if (this.listArrBullet[bulletKey].isRemove) {
+            bulletArrToDelete.push(this.listArrBullet[bulletKey].numberID);
+        }
+    }
+    for (var i = 0, l = bulletArrToDelete.length; i < l; i++) {
+        delete this.listArrBullet[bulletArrToDelete[i]]; //delete the bullet
+
+    }
+
+    //delete all tanks are marked as isRemoved = true from previous frame
+    var tankArrToDelete = [];
+    var tankKeys = Object.keys(this.PLAYLIST);
+    for (var i = 0, l = tankKeys.length; i < l; i++) {
+        var tankKey = tankKeys[i];
+        if (this.PLAYLIST[tankKey].isRemove) {
+            tankArrToDelete.push(this.PLAYLIST[tankKey].numberID);
+        }
+    }
+    for (var i = 0, l = tankArrToDelete.length; i < l; i++) {
+        if (tankArrToDelete[i] < 0){
+            delete this.PLAYLIST[tankArrToDelete[i]];
+            delete this.BOOTAILIST[tankArrToDelete[i]];
+        }
+
+        if (tankArrToDelete[i] > 0){
+            console.log('create new player ');
+            this.resetPlayer(this.PLAYLIST[tankArrToDelete[i]]);
+
+        }
+    }
 
     //update tank positions and push tanks into their right zones
     for (var tankid  in this.PLAYLIST) {
@@ -191,6 +254,7 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
 
         //update position before push into right zone
         tankObj.updatePosition(dttime);
+
         var indexcv = MapConvertUnit(tankObj.pos.x, tankObj.pos.y);
         tankObj.zoneid = indexcv;
         if (indexcv >= 0) {
@@ -201,11 +265,12 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
     }
 
 
+
+
     //update bullet position and push the bullet into the right zones
     for (var b_name in this.listArrBullet) {
         var bl = this.listArrBullet[b_name];
         bl.updatePosition(dttime);
-
 
         var indexcv = MapConvertUnit(bl.pos.x, bl.pos.y);
         bl.zoneid = indexcv;
@@ -214,8 +279,6 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
             bulletZoneItem.push(bl);  //push bullet into the right zoneId
         }
 
-        /*
-         */
     }
 
 
@@ -237,132 +300,175 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
         for (var i = 0; i < arrAroundZones.length; i++) {// max la 0-9 thoi
             var tankArr = arrtankZone[arrAroundZones[i]];  //get tank in zoneId
             for (var j = 0; j < tankArr.length; j++) {
-                if (bl.checkCollisionWithTank(tankArr[j])) {
-                    var shooter = this.PLAYLIST[bl.idplayer];
-                    shooter.score++;
-                    this.shooter = shooter;
+                var tank = tankArr[j];
+                if (bl.checkCollisionWithTank(tank)) {
+                    bl.isRemove = true;
+                    tank.hp--;
+                    if (tank.hp <= 0) {
+                        tank.isRemove = true; //will be delete at next frame
+                    }
+
+                    if (this.PLAYLIST.hasOwnProperty(bl.idplayer)){
+                        tank.isShooted = true;
+                        var shooter = this.PLAYLIST[bl.idplayer];
+                        shooter.score++;
+                        tank.shooterId = shooter.numberID;
+                        console.log(tank.numberID + ' shooted by ' + tank.shooterId +" current hp "+tank.hp);
+                    }
+
                 }
+
             }
         }
 
     }
 
 
-    this.UpdateAIController(arrtankZone);
-    var pack_removebullet = [];
-    var pack_send_client_bullet = [];
+    this.updateAIController(arrtankZone);
+
+    //check collision with other tanks
+
 
     for (var tankid  in this.PLAYLIST) {// update thong tin xu ly cac xe tank
         var tankObj_tmp = this.PLAYLIST[tankid];
-        if (!tankObj_tmp.isRemove) {
-            //collision with wall --> set the collision = true
+        if (!tankObj_tmp.isExplosed){
+            for (var i = 0; i < arrIndexArrount_tank.length; i++) {// max la 0-9 thoi
+                var tankArrInZone = arrtankZone[arrIndexArrount_tank[i]];  //get tank in zoneId
 
-            tankObj_tmp.isCollisder = false;
-            tankObj_tmp.checkCollisionWithMapEdge();
-
-            var firestatus = tankObj_tmp.updateGunRotationAndFire(dttime);
-            if (firestatus === 1) {
-                this.createNewBullet(tankObj_tmp);
-            }
-
-            var arr_Obs_arround = this.getAllObstacbesAroundMe(tankObj_tmp.pos.x, tankObj_tmp.pos.y);
-
-            var ARR_OBS_PACK = [];
-            for (var idobj = 0; idobj < arr_Obs_arround.length; idobj++) {// lay ra cac Obs xung quanh no va kt va cham
-                var tmpObs = arr_Obs_arround[idobj];
-                var distance = distace2Object(tankObj_tmp.pos, tmpObs);
-                if (distance < 400) {
-                    ARR_OBS_PACK.push({
-                        x: tmpObs.x,
-                        y: tmpObs.y,
-                        w: tmpObs.w,
-                        h: tmpObs.h,
-                        id: tmpObs.id
-                    });
-
-                    //kiem tra va cham o day luon
-                    tankObj_tmp.checkCollisionWithObstacle(tmpObs);
-                }
-            }
+                for (var j = 0; j < tankArrInZone.length; j++) {
+                    var tank_in_zone = tankArrInZone[j];//get tank
 
 
-            var arrIndexArrount_tank = getMapAround(tankObj_tmp.zoneid); //all around zoneIds
+                    if (tank_in_zone.numberID !== tankObj_tmp.numberID) {
+                        if (distace2Object(tankObj_tmp.pos, tank_in_zone.pos) < 100) {
+                            if (tankObj_tmp.checkCollisionWithOtherTank(tank_in_zone)) {
+                                var explosion = new Explosion((tankObj_tmp.pos.x+tank_in_zone.pos.x)/2,
+                                    (tankObj_tmp.pos.y+tank_in_zone.pos.y)/2, (tankObj_tmp.hp+tank_in_zone.hp)/2)
+                                var indexcv = MapConvertUnit(explosion.x, explosion.y);
+                                explosion.zoneId = indexcv;
+                                if (indexcv >= 0) {
+                                    var explosionList = arrExplosion[indexcv];
+                                    explosionList.push(explosion);  //push bullet into the right zoneId
+                                }
 
-            //get all bullet around me
-            for (var i_t = 0; i_t < arrIndexArrount_tank.length; i_t++) {// max la 0-9 thoi
-                var zonde_bullet_tmp = arrBulletZone[arrIndexArrount_tank[i_t]];  //get all bullets in zoneId
 
-                for (var i_t_z = 0; i_t_z < zonde_bullet_tmp.length; i_t_z++) {
-                    var buller_in_zone = zonde_bullet_tmp[i_t_z];//get bullet
-                    if (bl.isRemove) {
-                        pack_removebullet.push(b_name);
-                    } else {
-                        pack_send_client_bullet.push({
-                            x: Number(bl.pos.x),
-                            y: Number(bl.pos.y),
-                            opp: bl.opacity,
-                            id: bl.numberID
-                        });
+                            }
+                        }
                     }
                 }
             }
-
-
-            //update tanks in around zones
-            var ARR_TANK_PACK = [];
-
-            for (var i_t = 0; i_t < arrIndexArrount_tank.length; i_t++) {// max la 0-9 thoi
-                var id_zone_tmpx = arrIndexArrount_tank[i_t];// tu 0-9 ==> get a zoneId
-                var zonde_tank_tmp = arrtankZone[id_zone_tmpx];  //get tank in zoneId
-
-                for (var i_t_z = 0; i_t_z < zonde_tank_tmp.length; i_t_z++) {
-                    var tank_in_zone = zonde_tank_tmp[i_t_z];//get tank
-
-                    //check the collision with this tank, if have, adjust the position
-                    if (distace2Object(tankObj_tmp.pos, tank_in_zone) < 100) {
-                        tankObj_tmp.checkCollisionWithOtherTank(tank_in_zone);
-                    }
-
-                    var strspPush = "";
-                    if (tankObj_tmp.isCollisder) {//tank hien tai dang va cham, khong gui thong tin ve speed, MVStatus, tankstatus c
-                        //cua cac tank khac
-                        strspPush = "";
-                    } else {
-                        strspPush = tank_in_zone.mySpeed + "|" + tank_in_zone.MVSTT + "|" + tank_in_zone.tangstt;
-                    }
-
-                    ARR_TANK_PACK.push({
-                        x: Number(tank_in_zone.pos.x).toFixed(2) + "",
-                        y: Number(tank_in_zone.pos.y).toFixed(2) + "",
-                        id: tank_in_zone.numberID + "",
-                        r: Number(tank_in_zone.r).toFixed(2) + "",
-                        //typeTank:player_tmp.typeTank,
-                        lbdisplay: tank_in_zone.lbdisplay,
-                        level: tank_in_zone.level + "",
-                        score: tank_in_zone.score + "",
-                        sp: strspPush,
-                        gR: tank_in_zone.gunRotation + ""
-                    });
-                }
-            }
-
-            if (tankObj_tmp.isCollisder) {
-                tankObj_tmp.changeDir();
-            }
-            tankObj_tmp.pack_bullet = pack_send_client_bullet;
-            tankObj_tmp.pack_player = ARR_TANK_PACK;
-            tankObj_tmp.pack_obs = ARR_OBS_PACK;
 
         }
     }
 
-    var maxCount = pack_removebullet.length;
-    for (var i = 0; i < maxCount; i++) {
-        var iddelete = pack_removebullet[i];
-        console.log("iddelete: %s", iddelete);
-        delete this.listArrBullet[iddelete];
+
+            for (var tankid  in this.PLAYLIST) {// update thong tin xu ly cac xe tank
+        var tankObj_tmp = this.PLAYLIST[tankid];
+
+        //collision with wall --> set the collision = true
+        tankObj_tmp.isCollisder = false;
+        tankObj_tmp.checkCollisionWithMapEdge();
+        var firestatus = tankObj_tmp.updateGunRotationAndFire(dttime);
+        if (firestatus === 1) {
+            this.createNewBullet(tankObj_tmp);
+        }
+
+        var arr_Obs_arround = this.getAllObstacbesAroundMe(tankObj_tmp.pos.x, tankObj_tmp.pos.y);
+
+        var ARR_OBS_PACK = [];
+        for (var idobj = 0; idobj < arr_Obs_arround.length; idobj++) {// lay ra cac Obs xung quanh no va kt va cham
+            var tmpObs = arr_Obs_arround[idobj];
+            var distance = distace2Object(tankObj_tmp.pos, tmpObs);
+            if (distance < 400) {
+                ARR_OBS_PACK.push({
+                    x: tmpObs.x,
+                    y: tmpObs.y,
+                    w: tmpObs.w,
+                    h: tmpObs.h,
+                    id: tmpObs.id
+                });
+
+                //kiem tra va cham o day luon
+                tankObj_tmp.checkCollisionWithObstacle(tmpObs);
+            }
+        }
+
+
+        var arrIndexArrount_tank = getMapAround(tankObj_tmp.zoneid); //all around zoneIds
+        var pack_send_client_bullet = [];
+        //get all bullet around me
+        for (var i = 0; i < arrIndexArrount_tank.length; i++) {// get all around zones
+            var bulletArrInZone = arrBulletZone[arrIndexArrount_tank[i]];  //get all bullets in one zone
+            for (var j = 0; j < bulletArrInZone.length; j++) {
+                var bl = bulletArrInZone[j];//get a bullet
+                pack_send_client_bullet.push({
+                    x: Number(bl.pos.x),
+                    y: Number(bl.pos.y),
+                    opp: bl.opacity,
+                    id: bl.numberID
+                });
+
+            }
+        }
+
+
+        //update tanks in around zones
+        var ARR_TANK_PACK = [];
+
+        for (var i = 0; i < arrIndexArrount_tank.length; i++) {// max la 0-9 thoi
+            var tankArrInZone = arrtankZone[arrIndexArrount_tank[i]];  //get tank in zoneId
+
+            for (var j = 0; j < tankArrInZone.length; j++) {
+                var tank_in_zone = tankArrInZone[j];//get tank
+
+
+                //console.log('this tank '+ tankObj_tmp.pos.x +' other '+tank_in_zone.pos.x);
+                //check the collision with this tank, if have, adjust the position
+
+
+                if (tank_in_zone.numberID !== tankObj_tmp.numberID) {
+                    if (distace2Object(tankObj_tmp.pos, tank_in_zone.pos) < 100) {
+                        if (tankObj_tmp.checkCollisionWithOtherTank(tank_in_zone)){
+
+
+
+                        }
+                    }
+                }
+
+
+                var strspPush = "";
+                if (tankObj_tmp.isCollisder) {//tank hien tai dang va cham, khong gui thong tin ve speed, MVStatus, tankstatus c
+                    //cua cac tank khac
+                    strspPush = "";
+                } else {
+                    strspPush = tank_in_zone.mySpeed + "|" + tank_in_zone.MVSTT + "|" + tank_in_zone.tangstt;
+                }
+
+                ARR_TANK_PACK.push({
+                    x: Number(tank_in_zone.pos.x).toFixed(2) + "",
+                    y: Number(tank_in_zone.pos.y).toFixed(2) + "",
+                    id: tank_in_zone.numberID + "",
+                    r: Number(tank_in_zone.r).toFixed(2) + "",
+                    //typeTank:player_tmp.typeTank,
+                    lbdisplay: tank_in_zone.lbdisplay,
+                    level: tank_in_zone.level + "",
+                    score: tank_in_zone.score + "",
+                    sp: strspPush,
+                    gR: tank_in_zone.gunRotation + ""
+                });
+            }
+        }
+
+        /*
+         if (tankObj_tmp.isCollisder) {
+         tankObj_tmp.changeDir();
+         }*/
+        tankObj_tmp.pack_bullet = pack_send_client_bullet;
+        tankObj_tmp.pack_player = ARR_TANK_PACK;
+        tankObj_tmp.pack_obs = ARR_OBS_PACK;
+
     }
-    pack_removebullet = [];
 
 
     this.lifeTimeSC = this.lifeTimeSC + dttime;
@@ -371,35 +477,31 @@ CCRoom.prototype.updateFrameStep = function (dttime) {
         this.lifeTimeSC = 0;
         this.ManagerAI();
     }
-
-
-    arrtankZone = [];
-    arrBulletZone = [];
-    arrItemZone = [];
-
 }
 
 
-CCRoom.prototype.UpdateAIController = function (arrtankzone) {
+CCRoom.prototype.updateAIController = function (arrtankzone) {
 
     for (var ai_id in this.BOOTAILIST) {
         var boot_tmp = this.BOOTAILIST[ai_id];
-        if (boot_tmp.player.isCollisder) {
-            boot_tmp.changeDir();
-        } else {
+        boot_tmp.UpdateState();
 
-            boot_tmp.UpdateState();
-        }
-
-        if (boot_tmp.player.isShooted){
-            boot_tmp.shootTarget(boot_tmp.player.shooter);
+        if (boot_tmp.player.isShooted && boot_tmp.player.shooterId !== 0) {
+            console.log('shooted by ' + boot_tmp.player.shooterId);
+            if (this.PLAYLIST.hasOwnProperty(boot_tmp.player.shooterId)){
+                var target = this.PLAYLIST[boot_tmp.player.shooterId];
+                boot_tmp.shootTarget(target);
+            }
             boot_tmp.player.isShooted = false;
-            boot_tmp.player.shooter = null;
-        } else {
-            var zoneIdArr = getMapAround(this.player.zoneId); //all around zoneIds
-            var arr_Obs_arround = this.getAllObstacbesAroundMe(this.player.pos.x, this.player.pos.y);
+            boot_tmp.player.shooterId = 0;
 
-            boot_tmp.shootClosestTank(zoneIdArr, arrtankzone, arr_Obs_arround);
+        } else {
+
+            var zoneIdArr = getMapAround(boot_tmp.player.zoneid); //all around zoneIds
+            var arr_Obs_arround = this.getAllObstacbesAroundMe(boot_tmp.player.pos.x, boot_tmp.player.pos.y);
+
+
+            boot_tmp.shootClosestTank(arrtankzone, zoneIdArr, arr_Obs_arround);
         }
     }
     /*
@@ -411,25 +513,31 @@ CCRoom.prototype.UpdateAIController = function (arrtankzone) {
 
 
      */
-    arrtankzone = [];// da test roi khong sao ca
 }
 
 
 CCRoom.prototype.ManagerAI = function () {
-    return;
+    //return;
+
+    if (this.aiAdded === true) {
+        return;
+    }
     var cplay = this.getCountUser();
     if (cplay > 40 || cplay == 0) {
         return;
     }
-    var countAddAI = 5;
-    if (cplay > 30) {
-        countAddAI = 2;
-    } else if (countAddAI > 20) {
-        countAddAI = 3;
-    } else if (countAddAI > 10) {
-        countAddAI = 4;
-    }
-    countAddAI = 2;
+
+    var countAddAI = 10;
+    /*
+     if (cplay > 30) {
+     countAddAI = 2;
+     } else if (countAddAI > 20) {
+     countAddAI = 3;
+     } else if (countAddAI > 10) {
+     countAddAI = 4;
+     }
+     countAddAI = 2;
+     */
     var countFree = this.listArrFrePosition.length;
     for (var i_ad = 0; i_ad < countAddAI; i_ad++) {
 
@@ -492,6 +600,7 @@ CCRoom.prototype.ManagerAI = function () {
 
 
     }
+    this.aiAdded = true;
 }
 
 

@@ -21,7 +21,7 @@ function CCPlayer(id) {
     this.gunRTarget = 0;
     this.gunstt = -1; // don't need to rotate
     this.isShooted = false;
-    this.shooter = null;
+    this.shooterId = 0;
     this.roomID = "";
     this.zoneid = 0;
 
@@ -32,6 +32,7 @@ function CCPlayer(id) {
     this.type = 1;// 1 la player binh thuong, -1 la Boot
     this.isCollisder = false;
 }
+
 
 CCPlayer.prototype.changeRotationGun = function (newroation) {
     if (Math.abs(this.gunRotation) > 360) {
@@ -127,38 +128,26 @@ CCPlayer.prototype.chuanhoagoc = function (huongquay) {
     var pt2 = huongquay % 2;
     if (pt2 == pt1) { //same axis --> no rotating
         this.MVSTT = huongquay;
+
         return;
     }
 
     var goctoi = 0;
     if (this.MVSTT == 1) {//0
-        if (huongquay == 2) {
-            goctoi = 90;
-        } else {
-            goctoi = -90;
-        }
+        goctoi = (huongquay == 2) ? 90 : -90;
     } else if (this.MVSTT == 2) {//90
-        if (huongquay == 3) {
-            goctoi = 90;
-        } else {
-            goctoi = -90;
-        }
+        goctoi = (huongquay == 3) ? 90 : -90;
     } else if (this.MVSTT == 3) {//180
-        if (huongquay == 2) {
-            goctoi = -90;
-        } else {
-            goctoi = 90;
-        }
+        goctoi = (huongquay == 2) ? -90 : 90;
     } else if (this.MVSTT == 4) {//270
-        if (huongquay == 3) {
-            goctoi = -90;
-        } else {
-            goctoi = 90;
-        }
+        goctoi = (huongquay == 3) ? -90 : 90;
     }
+
     this.r_target = goctoi;
     this.tangstt = 2;
     this.MVSTT = huongquay;
+
+
 }
 CCPlayer.prototype.updatePosition = function (df_movetime) {
 
@@ -186,6 +175,7 @@ CCPlayer.prototype.updatePosition = function (df_movetime) {
 
 
     if (this.tangstt > 0) {  //need to stop rotate before moving
+
         return;
     }
     if (this.MVSTT == 1) { //x-axis forward
@@ -207,24 +197,29 @@ CCPlayer.prototype.updatePosition = function (df_movetime) {
         this.pos.y -= this.mySpeed * df_movetime;
         this.r = 90;
     }
+
 }
 //collision happen, adjust the position
-function collisderLimitPos(dtlimit) {
+CCPlayer.prototype.collisderLimitPos = function (dtlimit) {
+
     if (this.tangstt > 0) {
         return;
     }
-    if (this.MVSTT == 1) {
+
+    if (this.MVSTT === 1) {
         this.pos.x -= dtlimit;
     }
-    else if (this.MVSTT == 2) {
+    else if (this.MVSTT === 2) {
         this.pos.y -= dtlimit;
     }
-    else if (this.MVSTT == 3) {
+    else if (this.MVSTT === 3) {
         this.pos.x += dtlimit;
     }
-    else if (this.MVSTT == 4) {
+    else if (this.MVSTT === 4) {
         this.pos.y += dtlimit;
     }
+
+
 }
 
 CCPlayer.prototype.checkCollisionWithMapEdge = function () {
@@ -243,21 +238,21 @@ CCPlayer.prototype.checkCollisionWithMapEdge = function () {
         this.pos.y = 950;
         this.isCollisder = true;
     }
-}
-
-CCPlayer.prototype.changeDir = function () {
-    var huong = 1;
-    var randomNumber = Math.random() >= 0.5;
-    if (randomNumber) {
-        huong = -1;
+    if (this.isCollisder) {
+        this.changeDir();
     }
-    this.MVSTT = this.MVSTT + huong;
+}
+//CCPlayer.prototype.
+CCPlayer.prototype.changeDir = function () {
+
+    this.MVSTT += (Math.random() >= 0.5) ? 1 : -1;
     if (this.MVSTT < 1) {
         this.MVSTT = 4;
     }
     if (this.MVSTT > 4) {
         this.MVSTT = 1;
     }
+
     this.countStep = 0;
 }
 
@@ -268,10 +263,18 @@ CCPlayer.prototype.checkCollisionWithObstacle = function (obstacle) {
     var kcW = this.w / 2 + obstacle.w / 2;
     var kcH = this.h / 2 + obstacle.h / 2;
 
+
     if (dtX < kcW && dtY < kcH) {
+        // console.log('dtX :'+ dtX +' '+'kcW '+kcW);
         this.isCollisder = true;
+        if (typeof(this.MVSTT) === "string") {
+            this.MVSTT = parseInt(this.MVSTT);
+        }
         var overlapDistance = (this.MVSTT % 2 === 1) ? kcW - dtX : kcH - dtY;
-        collisderLimitPos(overlapDistance);
+
+
+        this.collisderLimitPos(overlapDistance);
+        this.changeDir();
     }
 }
 
@@ -281,11 +284,14 @@ CCPlayer.prototype.checkCollisionWithOtherTank = function (tank) {
     var dtY = Math.abs(this.pos.y - tank.pos.y);
     var kcW = this.w / 2 + tank.w / 2;
     var kcH = this.h / 2 + tank.h / 2;
-
     if (dtX < kcW && dtY < kcH) {
         this.isCollisder = true;
         var overlapDistance = (this.MVSTT % 2 === 1) ? kcW - dtX : kcH - dtY;
-        collisderLimitPos(overlapDistance);
+        this.collisderLimitPos(overlapDistance);
+        this.changeDir();
+     return true;
+    } else {
+        return false;
     }
 }
 

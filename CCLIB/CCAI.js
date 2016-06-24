@@ -1,3 +1,4 @@
+var common = require('./common');
 function CCAI(player_s) {
     this.player = player_s;
     this.id = null;
@@ -51,6 +52,63 @@ CCAI.prototype.UpdateState = function () {
         this.nextCountStep = Math.floor(Math.random() * 300) + 100;
     }
 
+}
+
+CCAI.prototype.shootClosestTank = function (arrtankzone, zoneIdArr, obstacleArr) {
+
+    var minDistance = 300;
+    var target = null;
+
+    for (var i = 0; i < zoneIdArr.length; i++) {
+        var tankArr = arrtankzone[zoneIdArr[i]];  //get tank in zoneId
+
+        for (var j = 0; j < tankArr.length; j++) {
+            var tank = tankArr[j];//get tank
+
+            if (this.player.numberID !== tank.numberID) {
+
+                //get distance
+                var distance = common.distace2Object(this.player.pos, tank.pos);
+                //console.log('this '+ this.player.numberID+ ' closest ' + tank.numberID +' '+distance);
+                if (distance < minDistance) {
+                    //check if there is obstacle between this boot and the tank
+                    var intersect = false;
+                    var k = 0;
+
+                    while (k < obstacleArr.length && !intersect) {
+                        if (common.lineRectIntersec(this.player.pos.x, this.player.pos.y, tank.pos.x, tank.pos.y,
+                                obstacleArr[k].x, obstacleArr[k].y, obstacleArr[k].w, obstacleArr[k].h)) {
+                            intersect = true;
+                        }
+                        k++;
+                    }
+
+                    if (!intersect) {
+                        minDistance = distance;
+                        target = tank;
+                    }
+                }
+
+            }
+
+        }
+    }
+    if (target !== null && minDistance < 100) {
+        console.log('AI shoot target ' + target.numberID);
+        this.shootTarget(target);
+    }
+
+}
+
+CCAI.prototype.shootTarget = function (target) {
+
+
+    console.log(this.player.numberID + " | " + this.player.pos.x);
+
+    var sourcePos = this.player.pos;
+    var targetPos = target.pos;
+    var angle = common.calcAngle(sourcePos, targetPos);
+    this.player.changeRotationGun(angle);
 }
 
 
